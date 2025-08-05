@@ -1,100 +1,76 @@
-# Backend/Bajaj/main.py
-
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import ValidationError
-from typing import List
 import os
-import requests # <-- ADDED THIS IMPORT for exception handling
-from dotenv import load_dotenv
+import time
+import traceback
+from fastapi import FastAPI, HTTPException, Body, status, Depends, Request, BackgroundTasks
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import List
+from rich import print as rprint
+from rich.panel import Panel
+import requests
 
-# Import your existing modules
-from models import QueryRequest, QueryResponse
+from models import QueryRequest, QueryResponse, FinalAnswer
 from query_service import QueryService
-from config import GOOGLE_API_KEY
+from config import GOOGLE_API_KEY, API_AUTH_TOKEN
 
-# Load environment variables
-load_dotenv()
-
-# --- Configuration for Authentication ---
-# The API_AUTH_TOKEN will be loaded from your .env file
-API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
-
-# FastAPI's security scheme for Bearer token
+app = FastAPI(
+    title="Batch-Optimized RAG System",
+    description="Processes documents and answers a list of questions together with high efficiency.",
+    version="11.0.0",
+)
+query_service = QueryService()
 security = HTTPBearer()
 
-# --- Dependency for Authentication ---
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Verifies the Bearer token provided in the Authorization header.
-    """
-    if credentials.scheme != "Bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication scheme. Must be Bearer."
-        )
-    if credentials.credentials != API_AUTH_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token."
-        )
+    if credentials.scheme != "Bearer" or credentials.credentials != API_AUTH_TOKEN:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API token")
     return True
 
-# --- FastAPI Application Setup ---
-app = FastAPI(
-    title="LLM-Powered Intelligent Query-Retrieval System",
-    description="API for processing large documents and making contextual decisions.",
-    version="1.0.0",
+@app.on_event("startup")
+def on_startup():
+    if not GOOGLE_API_KEY or not API_AUTH_TOKEN:
+        raise RuntimeError("Missing critical environment variables: GOOGLE_API_KEY and API_AUTH_TOKEN")
+    rprint(Panel("Application startup complete.", title="[green]System Status[/green]"))
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = f"{process_time:.4f} sec"
+    rprint(f"[cyan]Request[/cyan] '{request.method} {request.url.path}' [bold green]completed in {process_time:.4f}s[/bold green]")
+    return response
+
+@app.post(
+    "/hackrx/run",
+    response_model=QueryResponse,
+    tags=["Query Processing"],
+    summary="Process a Document and Answer a Batch of Questions"
 )
-
-# Initialize your QueryService
-query_service = QueryService()
-
-# --- API Endpoint ---
-@app.post("/hackrx/run", response_model=List[QueryResponse], status_code=status.HTTP_200_OK)
 async def run_submission(
-    request: QueryRequest,
+    request_body: QueryRequest,
     background_tasks: BackgroundTasks,
     authenticated: bool = Depends(verify_token)
 ):
-    """
-    Processes a document URL and a list of questions to provide contextual answers.
-    """
-    if not GOOGLE_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: GOOGLE_API_KEY is not set."
-        )
-    if not API_AUTH_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: API_AUTH_TOKEN is not set."
-        )
-
+    rprint(Panel(f"Processing request for document: [blue]{request_body.documents}[/blue]", title="[cyan]New Request[/cyan]"))
     try:
-        results_with_generated_queries = query_service.process_queries(
-            document_url=request.documents,
-            questions=request.questions,
+        results: List[FinalAnswer] = query_service.process_queries(
+            document_url=str(request_body.documents),
+            questions=request_body.questions,
             background_tasks=background_tasks
         )
-
-        # Extract only the QueryResponse objects for the final API response
-        final_responses: List[QueryResponse] = [res for res, _ in results_with_generated_queries]
-
-        return final_responses
-
+        final_answers = [res.answer for res in results]
+        return QueryResponse(answers=final_answers)
     except requests.exceptions.RequestException as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to download document from URL: {e}"
-        )
-    except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid request data: {e.errors()}"
-        )
+        rprint(Panel(f"[bold red]Document Download Failed:[/bold red]\n{e}", title="[red]Error[/red]"))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to download document: {e}")
+    except ValueError as e:
+        rprint(Panel(f"[bold red]Processing Error:[/bold red]\n{e}", title="[red]Error[/red]"))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An internal server error occurred: {e}"
-        )
+        tb_str = traceback.format_exc()
+        rprint(Panel(f"[bold red]An unexpected server error occurred:[/bold red]\n{tb_str}", title="[red]Server Error[/red]"))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred.")
+
+@app.get("/health", tags=["Monitoring"], summary="API Health Check")
+def health_check():
+    return {"status": "ok"}

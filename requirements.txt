@@ -3,11 +3,12 @@ uvicorn[standard]
 langchain
 langgraph
 langchain-google-genai
-langchain-chroma
 chromadb
 tiktoken
 pypdf
-fitz
+PyMuPDF
 python-dotenv
 requests
 rich
+python-docx
+unstructured[docx,eml]

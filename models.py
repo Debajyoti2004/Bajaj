@@ -1,17 +1,12 @@
-from pydantic import BaseModel, HttpUrl, Field
-from typing import List, Optional
+from pydantic import BaseModel, HttpUrl
+from typing import List
 
 class QueryRequest(BaseModel):
     documents: HttpUrl
     questions: List[str]
 
-class QueryResponse(BaseModel):
-    answer: str
-    rationale: str
-    source_page: Optional[int] = None
-
 class FinalAnswer(BaseModel):
     answer: str
 
-class GeneratedQueries(BaseModel):
-    queries: List[str] = Field(description="A list of 3 distinct, self-contained search queries based on the original question.")
+class QueryResponse(BaseModel):
+    answers: List[str]
