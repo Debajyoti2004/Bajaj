@@ -1,9 +1,8 @@
-import os
-import sys
 from rich import print as rprint
 from rich.panel import Panel
 from fastapi import BackgroundTasks
-
+import sys
+import os
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from query_service import QueryService
@@ -27,7 +26,7 @@ def run_test():
     TEST_QUESTIONS = [
         "What is a Transformer and what are its components?",
         "What was the BLEU score for the big Transformer model on the English-to-German translation task shown in Table 2?",
-        "What is the capital of France?"
+        "How is the transformer model better from its predecessors?"
     ]
 
     rprint(Panel(
@@ -50,6 +49,10 @@ def run_test():
         rprint(Panel(f"[bold red]An error occurred during processing:[/bold red]\n{e}", title="[red]Test Failed[/red]"))
         return
 
+    results = query_service.process_queries(
+        document_url=TEST_DOCUMENT_URL,
+        questions=TEST_QUESTIONS
+    )
     rprint(Panel("[bold green]Processing Complete. Displaying Results...[/bold green]"))
 
     for i, res in enumerate(results):

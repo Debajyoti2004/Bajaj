@@ -54,11 +54,12 @@ QUESTIONS:
         return {"decomposed_queries": all_queries}
 
     def _retrieval_node(self, state: GraphState):
-        retriever = state["retriever"]
-        results = retriever.batch(state["decomposed_queries"])
-        all_docs = [doc for result in results for doc in result]
-        unique_docs = list({doc.page_content: doc for doc in all_docs}.values())
-        return {"documents": unique_docs}
+        all_retrieved_docs = []
+        for q in state["decomposed_questions"].queries:
+            retrieved = state["retriever"].invoke(q)
+            all_retrieved_docs.extend(retrieved)
+        unique_docs_dict = {doc.page_content: doc for doc in all_retrieved_docs}
+        return {"documents": list(unique_docs_dict.values())}
 
     def _generation_node(self, state: GraphState):
         context = "\n\n---\n\n".join([doc.page_content for doc in state["documents"]])

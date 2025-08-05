@@ -53,13 +53,12 @@ async def run_submission(
 ):
     rprint(Panel(f"Processing request for document: [blue]{request_body.documents}[/blue]", title="[cyan]New Request[/cyan]"))
     try:
-        results: List[FinalAnswer] = query_service.process_queries(
+        results: List[str] = query_service.process_queries(
             document_url=str(request_body.documents),
             questions=request_body.questions,
             background_tasks=background_tasks
         )
-        final_answers = [res.answer for res in results]
-        return QueryResponse(answers=final_answers)
+        return QueryResponse(answers=results)
     except requests.exceptions.RequestException as e:
         rprint(Panel(f"[bold red]Document Download Failed:[/bold red]\n{e}", title="[red]Error[/red]"))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to download document: {e}")

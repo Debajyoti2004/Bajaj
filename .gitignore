@@ -8,4 +8,6 @@ __pycache__/
 
 temp_docs/
 
-cache.txt
+doc_cache/
+
+vector_db/
