@@ -2,12 +2,11 @@ fastapi
 uvicorn[standard]
 langchain
 langgraph
+langchain-community
 langchain-google-genai
 langchain-chroma
-chromadb
 tiktoken
-pypdf
-fitz
+pymupdf
 python-dotenv
 requests
 rich

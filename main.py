@@ -1,4 +1,3 @@
-import os
 import time
 import traceback
 from fastapi import FastAPI, HTTPException, status, Depends, Request
@@ -6,18 +5,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List
 from rich import print as rprint
 from rich.panel import Panel
+from config import GOOGLE_API_KEY, API_AUTH_TOKEN
 import requests
 
-# FIX: Import 'Question' model for type conversion and removed unused 'BackgroundTasks'
 from models import QueryRequest, QueryResponse, FinalAnswer, Question
 from query_service import QueryService
-
-# --- Configuration ---
-# FIX: API token is now defined directly in the code as per the competition docs.
-API_AUTH_TOKEN = "722ea330773bc2088938dd4862c3f49ea3770db92788898e779cbdde02e2ad92"
-# FIX: It's good practice to load sensitive keys from environment variables.
-# Your query_service.py will likely need this.
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -61,7 +53,7 @@ async def add_process_time_header(request: Request, call_next):
 
 # --- API Endpoints ---
 @app.post(
-    "/api/v1/hackrx/run", # FIX: Path updated to match competition docs
+    "/api/v1/hackrx/run",
     response_model=QueryResponse,
     tags=["Query Processing"],
     summary="Process a Document and Answer a Batch of Questions",
@@ -78,8 +70,6 @@ async def run_submission(
     """
     rprint(Panel(f"Processing request for document: [blue]{str(request_body.documents)}[/blue]", title="[cyan]New Request[/cyan]"))
     try:
-        # FIX 1: Convert the incoming list of question strings into a list of Pydantic 'Question' models.
-        # Your 'query_service.py' expects List[Question], not List[str].
         questions_as_models = [Question(question=q) for q in request_body.questions]
 
         # The core logic is executed by the QueryService
@@ -88,8 +78,6 @@ async def run_submission(
             questions=questions_as_models,
         )
 
-        # FIX 2: Extract just the answer string from each 'FinalAnswer' object.
-        # The final API response must be a JSON object with a key "answers" pointing to a list of strings.
         final_answers = [result.answer for result in results]
 
         return QueryResponse(answers=final_answers)

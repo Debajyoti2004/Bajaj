@@ -4,10 +4,8 @@ from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_core.runnables import RunnableParallel
 from models import *
 from config import ANSWER_LLM_MODEL,QUERY_LLM_MODEL,GOOGLE_API_KEY
-from pprint import pprint
 
 class GraphState(TypedDict):
     original_questions: List[Question]
@@ -24,17 +22,18 @@ class RAGWorkflow:
 
     def _query_decomposition_node(self, state: GraphState):
         prompt = ChatPromptTemplate.from_template(
-            """You are an expert research assistant.
+        """You’re an expert insurance researcher specializing in Bajaj Finserv policies.
 
-            Given a list of N user questions, generate for each question exactly 3 diverse, relevant search queries
-            useful for retrieving related information from documents.
+            Given a list of N user questions about health insurance (for example: grace period, waiting periods, maternity cover, etc.), generate for each question exactly 3 high-precision, self-contained search queries that:
 
-            Return a valid Pydantic object of type `GeneratedQueries`, which has a field `lst`, a list of length N.
-            Each element of `lst` must be a `GeneratedQueriesForEachQuestion`, containing a `queries` list of length 3.
+            1. Use policy terminology (e.g. “National Parivar Mediclaim Plus grace period”).  
+            2. Target distinct sub-topics or phrasing to maximize recall.  
+            3. Are optimized for retrieving specific clauses or limits in a PDF.  
+
+            Return a Pydantic `GeneratedQueries` object with field `lst`, a list of length N. Each `lst[i]` is a `GeneratedQueriesForEachQuestion` containing exactly 3 queries for question i.
 
             QUESTIONS:
-            {questions}
-            """
+            {questions}"""
         )
 
         questions_str = "\n".join(f"{i+1}. {q.question}" for i, q in enumerate(state["original_questions"]))
@@ -54,16 +53,6 @@ class RAGWorkflow:
         for i,el in enumerate(generated_lists.lst):
             el.queries.append(state["original_questions"][i].question)
         return {"decomposed_questions": generated_lists}
-
-    def pretty_print_documents_simple(self,documents: List[List[Document]], max_chars: int = 200):
-        for qi, docs in enumerate(documents, start=1):
-            print(f"\n=== Question #{qi} — {len(docs)} documents ===")
-            for di, doc in enumerate(docs, start=1):
-                meta = getattr(doc, "metadata", {}) or {}
-                print(f"\n  Doc {di}:")
-                pprint({"metadata": meta})
-                text_snip = doc.page_content[:max_chars].replace("\n", " ")
-                print(f"  content_preview: {text_snip}{'...' if len(doc.page_content) > max_chars else ''}")
 
     def _retrieval_node(self, state: GraphState):
         queries = []
@@ -101,21 +90,23 @@ class RAGWorkflow:
         N = len(questions)
 
         prompt = ChatPromptTemplate.from_template(
-            """You are a highly knowledgeable assistant answering questions using the given context ONLY.
+        """You’re an insurance expert answering queries *only* from provided excerpted policy text.
 
-            Provide a concise, accurate answer and a clear rationale strictly based on the provided content.
+        Use the CONTEXT to locate exact policy clauses or numbers. Then give a **concise** answer (≤150 words) with:
+        - A direct statement (“The grace period is 30 days.”)
+        - A one-sentence rationale referencing the context (“As per Section 5.2, …”).
 
-            CONTEXT:
-            {context}
+        Do **not** hallucinate or use external info—stick strictly to the text.
 
-            QUESTION: {question}
+        CONTEXT:
+        {context}
 
-            INSTRUCTIONS:
-            - Use only the information in the context to formulate the answer.
-            - Avoid making assumptions or using external knowledge.
-            - Your response should be a valid Pydantic object of type `FinalAnswer` with one field:
-            - `answer`: A direct, fact-based response.
-            """
+        QUESTION:
+        {question}
+
+        RESPONSE FORMAT:
+        Return a Pydantic `FinalAnswer` object with a single field:
+        - `answer`: Your fact-based, ≤150-word answer."""
         )
         structured_llm = self.generation_llm.with_structured_output(FinalAnswer)
         chain = prompt | structured_llm
@@ -123,8 +114,6 @@ class RAGWorkflow:
             {"context": contexts[i], "question": questions[i]} for i in range(N)
         ]
 
-        # 2. Invoke the chain in batch mode. LangChain handles the parallel execution.
-        #    The result is already a list of FinalAnswer objects in the correct order.
         final_answers: List[FinalAnswer] = chain.batch(batch_inputs) # type: ignore
         return {"answers": final_answers}
 
