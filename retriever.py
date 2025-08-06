@@ -18,7 +18,7 @@ class VectorStoreProvider:
         if not raw_documents:
             raise ValueError(f"Couldn’t load any content from {file_path}")
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1700, chunk_overlap=300)
         split_docs = text_splitter.split_documents(raw_documents)
         for doc in split_docs:
             doc.metadata["source"] = self.manager.document_url
@@ -44,6 +44,6 @@ class VectorStoreProvider:
             print("Embeddings already exist")
 
         retriever = db.as_retriever(
-            search_kwargs={"k": 3, "filter": {"source": self.manager.document_url}}
+            search_kwargs={"k": 5, "filter": {"source": self.manager.document_url}}
         )
         return retriever

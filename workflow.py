@@ -22,17 +22,21 @@ class RAGWorkflow:
 
     def _query_decomposition_node(self, state: GraphState):
         prompt = ChatPromptTemplate.from_template(
-        """You’re an expert insurance researcher specializing in Bajaj Finserv policies.
+            """You are an expert search query generator specializing in complex insurance policy documents.
 
-            Given a list of N user questions about health insurance (for example: grace period, waiting periods, maternity cover, etc.), generate for each question exactly 3 high-precision, self-contained search queries that:
+            For each user question provided, create exactly 3 distinct, self-contained search queries. These queries are designed to be run against a vector database to find the most relevant text chunks.
 
-            1. Use policy terminology (e.g. “National Parivar Mediclaim Plus grace period”).  
-            2. Target distinct sub-topics or phrasing to maximize recall.  
-            3. Are optimized for retrieving specific clauses or limits in a PDF.  
+            **Instructions for Query Generation:**
+            1.  **Specificity is Key:** Use precise terminology found in insurance policies.
+            2.  **Target All Facets:** Generate queries that cover different aspects of the question, especially:
+                - The core topic (e.g., "maternity expenses").
+                - Associated **conditions and eligibility criteria** (e.g., "maternity coverage waiting period").
+                - Specific **limits, sub-limits, or exclusions** (e.g., "monetary limit for childbirth expenses").
+            3.  **Self-Contained:** Each query must make sense on its own without relying on the original question's context.
 
             Return a Pydantic `GeneratedQueries` object with field `lst`, a list of length N. Each `lst[i]` is a `GeneratedQueriesForEachQuestion` containing exactly 3 queries for question i.
 
-            QUESTIONS:
+            USER QUESTIONS:
             {questions}"""
         )
 
@@ -58,9 +62,9 @@ class RAGWorkflow:
         queries = []
         for query_object in state["decomposed_questions"].lst:
             queries.extend(query_object.queries)
-        # batch run rather than sequential invoke
-        # queries is a list of strings
         """
+        batch run rather than sequential invoke
+        queries is a list of strings
         N initialy queries. Total 4 queries per original questions.
         4N queries in queries[].
         3 Chunks are returned.
@@ -90,23 +94,22 @@ class RAGWorkflow:
         N = len(questions)
 
         prompt = ChatPromptTemplate.from_template(
-        """You’re an insurance expert answering queries *only* from provided excerpted policy text.
+            """You are a meticulous and expert insurance policy analyst. Your task is to answer the user's QUESTION based *strictly and exclusively* on the provided CONTEXT from a policy document.
 
-        Use the CONTEXT to locate exact policy clauses or numbers. Then give a **concise** answer (≤150 words) with:
-        - A direct statement (“The grace period is 30 days.”)
-        - A one-sentence rationale referencing the context (“As per Section 5.2, …”).
+            **Instructions:**
+            1.  **Comprehensive Analysis:** Carefully read the entire CONTEXT to find all relevant information. The answer is often spread across multiple sentences.
+            2.  **Extract All Details:** Your answer MUST include all specific conditions, waiting periods, monetary limits, sub-limits, eligibility criteria, and quantitative details (like bed counts, percentages, or timeframes).
+            3.  **Direct and Factual:** Begin with a direct answer to the question. Follow up with the detailed supporting information you extracted.
+            4.  **No External Knowledge:** Do not use any information outside of the provided CONTEXT. If the context does not contain the answer, state that clearly.
+            5.  **Be Factual, Not Conversational:** Do not add pleasantries. Stick to the facts from the policy document.
 
-        Do **not** hallucinate or use external info—stick strictly to the text.
+            CONTEXT:
+            {context}
 
-        CONTEXT:
-        {context}
+            QUESTION:
+            {question}
 
-        QUESTION:
-        {question}
-
-        RESPONSE FORMAT:
-        Return a Pydantic `FinalAnswer` object with a single field:
-        - `answer`: Your fact-based, ≤150-word answer."""
+            Based on your analysis, provide the complete answer in the required Pydantic `FinalAnswer` object format."""
         )
         structured_llm = self.generation_llm.with_structured_output(FinalAnswer)
         chain = prompt | structured_llm

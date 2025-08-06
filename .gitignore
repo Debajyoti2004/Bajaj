@@ -1,13 +1,10 @@
 venv/
-
 .vscode/
-
 __pycache__/
-
 .env
-
 temp_docs/
-
 doc_cache/
-
 vector_db/
+document_manager.py
+docx_loader.py
+email_loader.py
